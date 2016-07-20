@@ -12,7 +12,6 @@ Options: {
 	afterCellCleared: collapse|
 
 }
-
  */
 
 var gridjs = (function () {
