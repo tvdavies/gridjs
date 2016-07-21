@@ -101,12 +101,13 @@
     });
   }
 
+  /**
+   * Detect whether or not the target provided is a valid relative target identifier
+   * @param  {[type]}  target targetName
+   * @return {Boolean}
+   */
   function isRelativeTarget(target) {
     return [ALL, PREV_IN_ROW, NEXT_IN_ROW, PREV_ROW, ROW, NEXT_ROW, PREV_IN_COL, NEXT_IN_COL, PREV_COL, COL, NEXT_COL].includes(target);
-  }
-
-  function isEntityId(entitiesMap, entityId) {
-    return entitiesMap.hasOwnProperty(entityId) && entitiesMap[entityId];
   }
 
   function isEntity(obj) {
@@ -121,7 +122,7 @@
    * @return {object}
    */
   function createGrid(options) {
-    var entitiesId = {};
+    var entitiesObj = {};
     var entities = [];
     var rows = [];
     var columns = [];
@@ -131,7 +132,7 @@
 
     /**
      * Publish a message out to other entities in the grid.
-     * @param  {string} source   The entity ID of the message source
+     * @param  {string} source   The entity ID of the message sourcerhino
      * @param  {string} target   The relative target(s), or entity ID or target for message
      * @param  {strinf} subject  The subject
      * @param  {object} message  The message to send
@@ -139,7 +140,7 @@
      */
     grid.publish = function (source, target, subject, message) {
       // Check target is valid
-      if (isRelativeTarget(target)) {} else if (isEntityId(target)) {
+      if (isRelativeTarget(target)) {} else if (entitiesObj.keys().includes(target)) {
         // Send message to entity
       }
     };
@@ -171,15 +172,23 @@
           throw new DuplicateFirstEntityException();
         } else {
           // Add a new entity as the first in the grid
-
-          // TODO Create an entity and add it.
-          // Surely we must be able to automatically create the first row/column
-          // even when autoExpand is not set to true.
-          // There is also the crucial question of how do we create the properties
-          // for the new entity? The properties could depend on other entities in the
-          // group, but we don't know which... needs some thinkin'.
+          var entity = new Entity(options);
+          entities.push(entity);
+          entitiesObj[entity.id] = entity;
         }
       }
+
+      // TODO
+      // Another thought. How will we link entities to the grid, if there are no entities
+      // either before or after in the row?
+      // We probably need to have an Empty class that fills empty places on the grid, so that
+      // we can navigate the grid.
+      // Or perhaps this is a non-issue
+      // In a grid, the number of rows/columns is consistent, and so when a column is added,
+      // we add entities for each of the rows. Likewise, when a new row is added, we add an
+      // entity to each of the columns. That is the easy part.
+      // The more difficult part is when we start deleting entities, rows columns and need to
+      // do some shifting around.
 
       // TODO
       // Whatever the user has provided, we need to try and resolve it to an entity in the grid
@@ -205,7 +214,7 @@
    */
 
   var Entity = function () {
-    function Entity(options) {
+    function Entity(prevInRow, prevInCol, options) {
       _classCallCheck(this, Entity);
 
       this.id = uuid();

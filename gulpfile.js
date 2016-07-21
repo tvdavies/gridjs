@@ -24,6 +24,8 @@ var banner = [
   ''
 ].join('\n');
 
+gulp.task('clean', () => del(['dist']));
+
 gulp.task('lint', cb => {
   pump([
         gulp.src('src/**/*.js'),
@@ -75,10 +77,11 @@ gulp.task('header', ['uglify'], cb => {
   );
 });
 
-gulp.task('clean', () => del(['dist']));
 gulp.task('default', ['header']);
+
+gulp.task('watch', ['default'], () => gulp.watch('src/**/*.js', ['default']));
 
 gulp.task('pre-commit', ['default'], shell.task([
   'git add -f dist/*',
-  'git stage -f dist'
+  'git stage -f dist/'
 ]));
