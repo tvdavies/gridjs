@@ -241,4 +241,3 @@
 
   exports.default = createGrid;
 });
-//# sourceMappingURL=gridjs.js.map

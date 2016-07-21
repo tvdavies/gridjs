@@ -43,7 +43,6 @@ gulp.task('build', ['clean', 'lint'], cb => {
           plugins: ['transform-es2015-modules-umd']
         }),
         concat('gridjs.js'),
-        header(banner, { pkg: pkg }),
         sourcemaps.write('.'),
         gulp.dest('dist')
     ],
@@ -58,7 +57,6 @@ gulp.task('uglify', ['build'], cb => {
         uglify({
           outSourceMap: true
         }),
-        header(banner, { pkg: pkg }),
         rename({ extname: '.min.js' }),
         sourcemaps.write('.'),
         gulp.dest('dist')
@@ -67,9 +65,20 @@ gulp.task('uglify', ['build'], cb => {
   );
 });
 
+gulp.task('header', ['uglify'], cb => {
+  pump([
+        gulp.src('dist/*.js'),
+        header(banner, { pkg: pkg }),
+        gulp.dest('dist')
+    ],
+    cb
+  );
+});
+
 gulp.task('clean', () => del(['dist']));
-gulp.task('default', ['uglify']);
+gulp.task('default', ['header']);
 
 gulp.task('pre-commit', ['default'], shell.task([
-  'git add -f dist/*'
+  'git add -f dist/*',
+  'git stage -f dist'
 ]));
