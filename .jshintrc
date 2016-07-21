@@ -1,0 +1,12 @@
+{
+  "esversion": 6,
+  "immed": true,
+  "newcap": true,
+  "noarg": true,
+  "nonew": true,
+  "laxbreak": true,
+  "loopfunc": true,
+  "undef": true,
+  "indent": 2,
+  "camelcase": true
+}
