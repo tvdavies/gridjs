@@ -22,25 +22,27 @@ const SHIFT_UP_ELSE_LEFT  = 'SHIFT_UP_ELSE_LEFT';   // Shift the entities up if 
 // Default options for new grid.
 // User may override any number of options in object passed as argument to the function.
 let defaultOptions = {
-  autoExpand: false,
-  autoCollapse: false,
-  afterEntityRemoved: DO_NOTHING,
-
-  // Callbacks
-  userObjectChanged: null,  // (entity, newUserObject, oldUserObject)
-  entityAdded: null,        // (entity)
-  entityRemoved: null       // (entity)
+  userObjectChanged: null,      // (entity, newUserObject, oldUserObject)
+  entityAdded: null,            // (entity)
+  entityRemoved: null,          // (entity)
+  entityMessageReceived: null   // (subject, message, userObject, entityProperties, entityId)
 };
 
-function isFunction(functionToCheck) {
+
+/**
+ * Checks if value is classified as a Function object
+ * Thanks to A.Levy for this clone function (http://stackoverflow.com/a/728694)
+ * @param  {*}       value  The value to check
+ * @return {Boolean}        Returns true if value is a function, else false.
+ */
+function isFunction(value) {
   let getType = {};
-  return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
+  return value && getType.toString.call(value) === '[object Function]';
 }
 
 /**
  * Generate a uuid
- * Thanks to broofa for this method of generating a uuid
- * http://stackoverflow.com/a/2117523
+ * Thanks to broofa for this method of generating a uuid (ttp://stackoverflow.com/a/2117523)
  * @return {string} uuid
  */
 function uuid() {
@@ -59,6 +61,10 @@ function isRelativeTarget(target) {
   return [ALL, PREV_IN_ROW, NEXT_IN_ROW, PREV_ROW, ROW, NEXT_ROW, PREV_IN_COL, NEXT_IN_COL, PREV_COL, COL, NEXT_COL].includes(target);
 }
 
+function isAfterRemoveAction(action) {
+  return [DO_NOTHING, RENEW, SHIFT_LEFT, SHIFT_UP, SHIFT_LEFT_ELSE_UP, SHIFT_UP_ELSE_LEFT].includes(action);
+}
+
 function isEntity(obj) {
   return obj && obj instanceof Entity;
 }
@@ -71,89 +77,165 @@ function isEntity(obj) {
  * @return {object}
  */
 function createGrid(options) {
-  let entitiesObj = {};
-  let entities = [];
-  let rows = [];
-  let columns = [];
+  const FIRST_ENTITY = new Entity(null, null, options);
+  let entities = {};
+  let rows = [[FIRST_ENTITY]];
+  let columns = [[FIRST_ENTITY]];
   let grid = {};
 
-  let firstEntity = null;
+  function addEntity(row, col) {
+    // Create a new entity and append to row and column.
+    let prevInRow = row[row.length - 1];
+    let prevInCol = col[col.length - 1];
+    let newEntity = new Entity(prevInRow, prevInCol, options);
+
+    prevInRow.nextInRow = newEntity;
+    prevInCol.netInCol = newEntity;
+
+    entities[newEntity.id] = newEntity;
+    row.push(newEntity);
+    col.push(newEntity);
+  }
+
+  function getEntity(val) {
+    // We need to resolve the value of source to an Entity
+    let entity = null;
+
+    // Is this a string? It could be an id
+    if (isEntity(val)) {
+      entity = val;
+    } else if (typeof val === 'string' && entities.keys().includes(val)) {
+      entity = entities[val];
+    } else if (Array.isArray(val) && val.length === 2) {
+      entity = getEntityByPosition(val[0], val[1]);
+    } else {
+      entity = getEntityByUserObject(val);
+    }
+  }
+
+  function getRelativeEntities(entity, target) {
+    var relativeEntities = [];
+
+    return relativeEntities;
+  }
+
+  function getEntityByPosition(row, col, create) {
+    // Do we have this many rows and columns?
+    // If not, and create flag is true, we will create them first
+    if (create) {
+      // Create new rows
+      for (let i = rows.length; i < row; i++) {
+        grid.addRow();
+      }
+
+      // Create new columns
+      for (let i = columns.length; i < col; i++) {
+        grid.addColumn();
+      }
+    }
+
+    if (rows.length >= row && rows[row - 1].length >= col) {
+      return rows[row - 1][col - 1];
+    }
+
+    // No entity there, and we didn't create it
+    return null;
+  }
+
+  function getEntityByUserObject(userObject) {
+    return entities.find(entity => entity.userObject === userObject);
+  }
+
+  function addRow() {
+    // Add an entity for each column
+    let row = [];
+    columns.forEach(col => this.addEntity(row, col));
+  }
+
+  function addColumn() {
+    // Add an entity for each row
+    let col = [];
+    rows.forEach(row => this.addEntity(row, col));
+  }
 
   /**
    * Publish a message out to other entities in the grid.
-   * @param  {string} source   The entity ID of the message sourcerhino
+   * @param  {string} source   The entity ID of the message source
    * @param  {string} target   The relative target(s), or entity ID or target for message
    * @param  {strinf} subject  The subject
    * @param  {object} message  The message to send
    * @return {undefined}
    */
   grid.publish = function (source, target, subject, message) {
-    // Check target is valid
-    if (isRelativeTarget(target)) {
+    // Source should be Entity, entityId, userObject or Array[row, column];
+    source = getEntity(source);
 
-    } else if (entitiesObj.keys().includes(target)) {
-      // Send message to entity
+    if (source === null) {
+      throw new Error('Cannot publish message without a valid source');
+    }
+
+    let targetEntity = getEntity(target);
+
+    if (targetEntity !== null) {
+      if (isFunction(options.entityMessageReceived)) {
+        options.entityMessageReceived(subject, message, targetEntity.userObject, targetEntity.properties, targetEntity.id);
+      }
+    } else if (isRelativeTarget(target)) {
+      // Get entities, and for each call grid.publish
+      getRelativeEntities(source, target).forEach(entity => grid.publish(source, entity, subject, message));
     }
   };
 
   /**
-   * [find description]
-   * @param  {[type]} iteratee [description]
-   * @return {[type]}          [description]
+   * Find entities that when passed to interatee function, return true.
+   * @param  {function} iteratee Iteratee function (userObject, entityProps, entityId)
+   * @return {Entity[]}
    */
   grid.find = function (iteratee) {
     if (isFunction(iteratee)) {
-      return entities.filter(entity => iteratee(entity.userObject, entity.properties, entity.id));
+      return Object.values(entities).filter(entity => iteratee(entity.userObject, entity.properties, entity.id));
     } else {
       return [];
     }
   };
 
-  grid.addEntity = function (after, space=ROW) {
-    // After must be an entity/entityId/userObject on the grid, unless this is the first entity, in which case
-    // it will be added to the first row, and the first column.
-
-    if (typeof after === 'undefined' || after === null) {
-      if (firstEntity !== null) {
-        // I'm afraid this isn't going to work out. It's not you, it's me.
-        throw new DuplicateFirstEntityException();
-      } else {
-        // Add a new entity as the first in the grid
-        let entity = new Entity(options);
-        entities.push(entity);
-        entitiesObj[entity.id] = entity;
-      }
+  /**
+   * Get user object at grid position
+   * @param  {[type]} row    [description]
+   * @param  {[type]} column [description]
+   * @return {[type]}        [description]
+   */
+  grid.get = function (row, column, callback) {
+    if (isFunction(callback)) {
+      let entity = getEntity(row, column, true);
+      callback(entity.userObject, entity.properties);
     }
-
-    // TODO
-    // Another thought. How will we link entities to the grid, if there are no entities
-    // either before or after in the row?
-    // We probably need to have an Empty class that fills empty places on the grid, so that
-    // we can navigate the grid.
-    // Or perhaps this is a non-issue
-    // In a grid, the number of rows/columns is consistent, and so when a column is added,
-    // we add entities for each of the rows. Likewise, when a new row is added, we add an
-    // entity to each of the columns. That is the easy part.
-    // The more difficult part is when we start deleting entities, rows columns and need to
-    // do some shifting around.
-
-    // TODO
-    // Whatever the user has provided, we need to try and resolve it to an entity in the grid
-    // otherwise we cannot add a new entity.
-
-    /*
-    if (isEntity(after)) {
-
-    } else if (isEntityId(after)) {
-
-    }
-    */
   };
 
+  /**
+   * Set user object at grid position
+   * @param {[type]} row        [description]
+   * @param {[type]} column     [description]
+   * @param {[type]} userObject [description]
+   */
+  grid.set = function (row, column, userObject) {
+    getEntity(row, column).userObject = userObject;
+  };
 
-  grid.removeEntity = function (entity) {
-    // TODO
-    // Remove an entity and do the jiggery-pokery to shift things around according to the options
+  /**
+   * Get number of rows in grid
+   * @return {number} Number of rows
+   */
+  grid.getRowCount = function () {
+    return rows.length;
+  };
+
+  /**
+   * Get number of columns in grid
+   * @return {number} Number of columns
+   */
+  grid.getColumnCount = function () {
+    return columns.length;
   };
 
   return grid;
@@ -165,6 +247,10 @@ function createGrid(options) {
 class Entity {
   constructor(prevInRow, prevInCol, options) {
     this.id = uuid();
+
+    this.prevInRow = prevInRow;
+    this.prevInCol = prevInCol;
+
     // Properties object can be passed to the user object when it is attached to the entity.
     // This allows properties associated with the entity can remain in place when the user object
     // is moved within the grid.
@@ -190,4 +276,4 @@ class DuplicateFirstEntityException {
   }
 }
 
-export default createGrid;
+export { createGrid };
