@@ -72,7 +72,7 @@
   // Default options for new grid.
   // User may override any number of options in object passed as argument to the function.
   var defaultOptions = {
-    userObjectChanged: null, // (entity, newUserObject, oldUserObject)
+    userObjectChanged: null, // (newUserObject, oldUserObject, entityProperties, entityId)
     entityAdded: null, // (entity)
     entityRemoved: null, // (entity)
     entityMessageReceived: null // (subject, message, userObject, entityProperties, entityId)
@@ -111,10 +111,20 @@
     return [ALL, PREV_IN_ROW, NEXT_IN_ROW, PREV_ROW, ROW, NEXT_ROW, PREV_IN_COL, NEXT_IN_COL, PREV_COL, COL, NEXT_COL].includes(target);
   }
 
+  /**
+   * [isAfterRemoveAction description]
+   * @param  {[type]}  action [description]
+   * @return {Boolean}        [description]
+   */
   function isAfterRemoveAction(action) {
     return [DO_NOTHING, RENEW, SHIFT_LEFT, SHIFT_UP, SHIFT_LEFT_ELSE_UP, SHIFT_UP_ELSE_LEFT].includes(action);
   }
 
+  /**
+   * [isEntity description]
+   * @param  {[type]}  obj [description]
+   * @return {Boolean}     [description]
+   */
   function isEntity(obj) {
     return obj && obj instanceof Entity;
   }
@@ -163,10 +173,41 @@
       }
     }
 
-    function getRelativeEntities(entity, target) {
-      var relativeEntities = [];
+    function isEntityRelativeTarget(e1, e2, target) {
+      if (e1 !== e2) {
+        switch (target) {
+          case ALL:
+            return true;
+          case PREV_IN_ROW:
+            return e2 === e1.prevInRow;
+          case NEXT_IN_ROW:
+            return e2 === e1.prevInRow;
+          case PREV_ROW:
+            return e2.rowNumber === e1.rowNumber - 1;
+          case ROW:
+            return e2.rowNumber === e1.rowNumber;
+          case NEXT_ROW:
+            return e2.rowNumber === e1.rowNumber + 1;
+          case PREV_IN_COL:
+            return e2 === e1.prevInCol;
+          case NEXT_IN_COL:
+            return e2 === e1.nextInCol;
+          case NEXT_COL:
+            return e2.colNumber === e1.colNumber - 1;
+          case COL:
+            return e2.colNumber === e1.colNumber;
+          case PREV_COL:
+            return e2.colNumber === e1.colNumber + 1;
+        }
+      }
 
-      return relativeEntities;
+      return false;
+    }
+
+    function getRelativeEntities(entity, target) {
+      return Object.values(entities).filter(function (val) {
+        return isEntityRelativeTarget(entity, val, target);
+      });
     }
 
     function getEntityByPosition(row, col, create) {
@@ -195,7 +236,7 @@
     function getEntityByUserObject(userObject) {
       return entities.find(function (entity) {
         return entity.userObject === userObject;
-      });
+      }) || null;
     }
 
     function addRow() {
@@ -216,6 +257,15 @@
       rows.forEach(function (row) {
         return _this2.addEntity(row, col);
       });
+    }
+
+    function setUserObject(entity, userObject) {
+      var oldUserObject = entity.userObject;
+      entity.userObject = userObject;
+
+      if (isFunction(options.userObjectChanged)) {
+        options.userObjectChanged(userObject, oldUserObject, entity.properties, entity.id);
+      }
     }
 
     /**
@@ -283,7 +333,27 @@
      * @param {[type]} userObject [description]
      */
     grid.set = function (row, column, userObject) {
-      getEntity(row, column).userObject = userObject;
+      var entity = getEntity(row, column);
+      setUserObject(entity, userObject);
+    };
+
+    /**
+     * Move the user object from one entity on grid to another
+     * @param  {[type]} fromRow    [description]
+     * @param  {[type]} fromColumn [description]
+     * @param  {[type]} toRow      [description]
+     * @param  {[type]} toColumn   [description]
+     * @return {[type]}            [description]
+     */
+    grid.move = function (fromRow, fromColumn, toRow, toColumn) {
+      var fromEntity = getEntity(fromRow, fromColumn);
+      var toEntity = getEntity(toRow, toColumn);
+
+      if (fromEntity && toEntity) {
+        var userObject = fromEntity.userObject;
+        setUserObject(fromEntity, null);
+        setUserObject(toEntity, userObject);
+      }
     };
 
     /**
@@ -314,13 +384,10 @@
       _classCallCheck(this, Entity);
 
       this.id = uuid();
-
+      this.rowNumber = prevInRow ? prevInRow.rowNumber + 1 : 1;
+      this.colNumber = prevInCol ? prevInCol.colNumber + 1 : 1;
       this.prevInRow = prevInRow;
       this.prevInCol = prevInCol;
-
-      // Properties object can be passed to the user object when it is attached to the entity.
-      // This allows properties associated with the entity can remain in place when the user object
-      // is moved within the grid.
       this.properties = {};
       this.userObject = null;
       this.options = options;
