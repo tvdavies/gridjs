@@ -8,5 +8,8 @@
   "loopfunc": true,
   "undef": true,
   "indent": 2,
-  "camelcase": true
+  "camelcase": true,
+  "globals": {
+      "console": false
+  }
 }

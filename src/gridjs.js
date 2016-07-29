@@ -118,26 +118,20 @@ function createGrid(options = {}) {
     row.push(newEntity);
     col.push(newEntity);
 
-    if (isFunction(options.entityAdded)) {
-      options.entityAdded(row, col, newEntity.properties, newEntity.id);
-    }
-
     return newEntity;
   }
 
-  function getEntity(val) {
+  function getEntity(val, callback) {
     // We need to resolve the value of source to an Entity
-    let entity = null;
-
     // Is this a string? It could be an id
     if (isEntity(val)) {
-      entity = val;
+      callback(val);
     } else if (typeof val === 'string' && Object.keys(entities).includes(val)) {
-      entity = entities[val];
+      callback(entities[val]);
     } else if (Array.isArray(val) && val.length === 2) {
-      entity = getEntityByPosition(val[0], val[1]);
+      getEntityByPosition(val[0], val[1], false, entity => callback(entity));
     } else {
-      entity = getEntityByUserObject(val);
+      callback(getEntityByUserObject(val));
     }
   }
 
@@ -176,27 +170,43 @@ function createGrid(options = {}) {
     return getObjectValues(entities).filter(val => isEntityRelativeTarget(entity, val, target));
   }
 
-  function getEntityByPosition(row, col, create) {
+  function getEntityByPosition(row, col, create, callback) {
+    let created = false;
+
     // Do we have this many rows and columns?
     // If not, and create flag is true, we will create them first
     if (create) {
+      if (row === 1 && rows.length === 0 && col === 1 && columns.length === 0) {
+        // Special case - we need to create the first row and column
+        rows.push([]);
+        columns.push([]);
+        addEntity(rows[0], columns[0]);
+        created = true;
+      }
+
       // Create new rows
       for (let i = rows.length; i < row; i++) {
         addRow();
+        created = true;
       }
 
       // Create new columns
       for (let i = columns.length; i < col; i++) {
         addColumn();
+        created = true;
       }
     }
 
-    if (rows.length >= row && rows[row - 1].length >= col) {
-      return rows[row - 1][col - 1];
-    }
+    console.log('rowIdx = ' + (row - 1) + ', rows.length = ' + rows.length);
+    console.log('colIdx = ' + (col - 1) + ', rows[row - 1].length = ' + rows[row - 1].length);
 
-    // No entity there, and we didn't create it
-    return null;
+    if (rows.length >= row && rows[row - 1].length >= col) {
+      if (isFunction(callback)) {
+        callback(rows[row - 1][col - 1], created);
+      }
+    } else if (isFunction(callback)) {
+      callback(null, created);
+    }
   }
 
   function getEntityByUserObject(userObject) {
@@ -236,22 +246,24 @@ function createGrid(options = {}) {
    */
   grid.publish = function (source, target, subject, message) {
     // Source should be Entity, entityId, userObject or Array[row, column];
-    source = getEntity(source);
-
-    if (source === null) {
-      throw new Error('Cannot publish message without a valid source');
-    }
-
-    let targetEntity = getEntity(target);
-
-    if (targetEntity !== null) {
-      if (isFunction(options.entityMessageReceived)) {
-        options.entityMessageReceived(subject, message, targetEntity.userObject, targetEntity.properties, targetEntity.id);
+    getEntity(source, sourceEntity => {
+      if (sourceEntity === null) {
+        throw new Error('Cannot publish message without a valid source');
       }
-    } else if (isRelativeTarget(target)) {
-      // Get entities, and for each call grid.publish
-      getRelativeEntities(source, target).forEach(entity => grid.publish(source, entity, subject, message));
-    }
+
+      getEntity(target, targetEntity => {
+        if (targetEntity !== null) {
+          if (isFunction(options.entityMessageReceived)) {
+            options.entityMessageReceived(subject, message, targetEntity.userObject, targetEntity.properties, targetEntity.id);
+          }
+        } else if (isRelativeTarget(target)) {
+          // Get entities, and for each call grid.publish
+          getRelativeEntities(source, target).forEach(entity => grid.publish(source, entity, subject, message));
+        }
+      });
+    });
+
+
   };
 
   /**
@@ -275,8 +287,7 @@ function createGrid(options = {}) {
    */
   grid.get = function (row, column, callback) {
     if (isFunction(callback)) {
-      let entity = getEntityByPosition(row, column, false);
-      callback(entity.userObject, entity.properties);
+      getEntityByPosition(row, column, false, entity => callback(entity.userObject, entity.properties));
     }
   };
 
@@ -287,10 +298,17 @@ function createGrid(options = {}) {
    * @param {[type]} userObject [description]
    */
   grid.set = function (row, column, userObject) {
-    let entity = getEntityByPosition(row, column, true);
-    if (userObject) {
-      setUserObject(entity, userObject);
-    }
+    console.log('setting entity');
+    console.log(row + ', ' + column);
+    getEntityByPosition(row, column, true, (entity, created) => {
+      if (userObject) {
+        setUserObject(entity, userObject);
+      }
+
+      if (created && isFunction(options.entityAdded)) {
+        options.entityAdded(entity.rowNumber, entity.colNumber, entity.properties, entity.id);
+      }
+    });
   };
 
   /**
@@ -302,14 +320,17 @@ function createGrid(options = {}) {
    * @return {[type]}            [description]
    */
   grid.move = function (fromRow, fromColumn, toRow, toColumn) {
-    let fromEntity = getEntityByPosition(fromRow, fromColumn);
-    let toEntity = getEntityByPosition(toRow, toColumn, true);
+    getEntityByPosition(fromRow, fromColumn, false, fromEntity => {
+      if (fromEntity === null) {
+        throw new Error('Source must exist within grid');
+      }
 
-    if (fromEntity && toEntity) {
-      let userObject = fromEntity.userObject;
-      setUserObject(fromEntity, null);
-      setUserObject(toEntity, userObject);
-    }
+      getEntityByPosition(toRow, toColumn, true, toEntity => {
+        let userObject = fromEntity.userObject;
+        setUserObject(fromEntity, null);
+        setUserObject(toEntity, userObject);
+      });
+    });
   };
 
   /**
@@ -344,6 +365,8 @@ class Entity {
     this.properties = {};
     this.userObject = null;
     this.options = options;
+
+    console.log('Entity at ' + this.rowNumber + ', ' + this.colNumber);
   }
 }
 
