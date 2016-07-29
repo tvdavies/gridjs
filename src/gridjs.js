@@ -22,12 +22,20 @@ const SHIFT_UP_ELSE_LEFT  = 'SHIFT_UP_ELSE_LEFT';   // Shift the entities up if 
 // Default options for new grid.
 // User may override any number of options in object passed as argument to the function.
 let defaultOptions = {
-  userObjectChanged: null,      // (newUserObject, oldUserObject, entityProperties, entityId)
-  entityAdded: null,            // (entity)
-  entityRemoved: null,          // (entity)
+  userObjectChanged: null,      // (newUserObject, oldUserObject, row, column, entityProperties, entityId)
+  entityAdded: null,            // (row, column, entityProperties, entityId)
+  entityRemoved: null,          // (row, column, entityProperties, entityId)
   entityMessageReceived: null   // (subject, message, userObject, entityProperties, entityId)
 };
 
+/**
+ * [getObjectValues description]
+ * @param  {[type]} obj [description]
+ * @return {[type]}     [description]
+ */
+function getObjectValues(obj) {
+  return Object.keys(obj).map(key => obj[key]);
+}
 
 /**
  * Checks if value is classified as a Function object
@@ -86,25 +94,35 @@ function isEntity(obj) {
  * Create a new grid
  * @return {object}
  */
-function createGrid(options) {
-  const FIRST_ENTITY = new Entity(null, null, options);
-  let entities = {};
-  let rows = [[FIRST_ENTITY]];
-  let columns = [[FIRST_ENTITY]];
-  let grid = {};
+function createGrid(options = {}) {
+  const entities = {};
+  const rows = [];
+  const columns = [];
+  const grid = {};
 
   function addEntity(row, col) {
     // Create a new entity and append to row and column.
-    let prevInRow = row[row.length - 1];
-    let prevInCol = col[col.length - 1];
+    let prevInRow = row.length > 0 ? row[row.length - 1] : null;
+    let prevInCol = col.length > 0 ? col[col.length - 1] : null;
     let newEntity = new Entity(prevInRow, prevInCol, options);
 
-    prevInRow.nextInRow = newEntity;
-    prevInCol.netInCol = newEntity;
+    if (prevInRow !== null) {
+      prevInRow.nextInRow = newEntity;
+    }
+
+    if (prevInCol !== null) {
+      prevInCol.netInCol = newEntity;
+    }
 
     entities[newEntity.id] = newEntity;
     row.push(newEntity);
     col.push(newEntity);
+
+    if (isFunction(options.entityAdded)) {
+      options.entityAdded(row, col, newEntity.properties, newEntity.id);
+    }
+
+    return newEntity;
   }
 
   function getEntity(val) {
@@ -114,7 +132,7 @@ function createGrid(options) {
     // Is this a string? It could be an id
     if (isEntity(val)) {
       entity = val;
-    } else if (typeof val === 'string' && entities.keys().includes(val)) {
+    } else if (typeof val === 'string' && Object.keys(entities).includes(val)) {
       entity = entities[val];
     } else if (Array.isArray(val) && val.length === 2) {
       entity = getEntityByPosition(val[0], val[1]);
@@ -155,7 +173,7 @@ function createGrid(options) {
   }
 
   function getRelativeEntities(entity, target) {
-    return Object.values(entities).filter(val => isEntityRelativeTarget(entity, val, target));
+    return getObjectValues(entities).filter(val => isEntityRelativeTarget(entity, val, target));
   }
 
   function getEntityByPosition(row, col, create) {
@@ -164,12 +182,12 @@ function createGrid(options) {
     if (create) {
       // Create new rows
       for (let i = rows.length; i < row; i++) {
-        grid.addRow();
+        addRow();
       }
 
       // Create new columns
       for (let i = columns.length; i < col; i++) {
-        grid.addColumn();
+        addColumn();
       }
     }
 
@@ -182,19 +200,21 @@ function createGrid(options) {
   }
 
   function getEntityByUserObject(userObject) {
-    return (entities.find(entity => entity.userObject === userObject) || null);
+    return (getObjectValues(entities).find(entity => entity.userObject === userObject) || null);
   }
 
   function addRow() {
     // Add an entity for each column
     let row = [];
-    columns.forEach(col => this.addEntity(row, col));
+    columns.forEach(col => addEntity(row, col));
+    rows.push(row);
   }
 
   function addColumn() {
     // Add an entity for each row
     let col = [];
-    rows.forEach(row => this.addEntity(row, col));
+    rows.forEach(row => addEntity(row, col));
+    columns.push(col);
   }
 
   function setUserObject(entity, userObject) {
@@ -202,7 +222,7 @@ function createGrid(options) {
     entity.userObject = userObject;
 
     if (isFunction(options.userObjectChanged)) {
-      options.userObjectChanged(userObject, oldUserObject, entity.properties, entity.id);
+      options.userObjectChanged(userObject, oldUserObject, entity.rowNumber, entity.colNumber, entity.properties, entity.id);
     }
   }
 
@@ -241,7 +261,7 @@ function createGrid(options) {
    */
   grid.find = function (iteratee) {
     if (isFunction(iteratee)) {
-      return Object.values(entities).filter(entity => iteratee(entity.userObject, entity.properties, entity.id));
+      return getObjectValues(entities).filter(entity => iteratee(entity.userObject, entity.properties, entity.id));
     } else {
       return [];
     }
@@ -255,7 +275,7 @@ function createGrid(options) {
    */
   grid.get = function (row, column, callback) {
     if (isFunction(callback)) {
-      let entity = getEntity(row, column, true);
+      let entity = getEntityByPosition(row, column, false);
       callback(entity.userObject, entity.properties);
     }
   };
@@ -267,8 +287,10 @@ function createGrid(options) {
    * @param {[type]} userObject [description]
    */
   grid.set = function (row, column, userObject) {
-    let entity = getEntity(row, column);
-    setUserObject(entity, userObject);
+    let entity = getEntityByPosition(row, column, true);
+    if (userObject) {
+      setUserObject(entity, userObject);
+    }
   };
 
   /**
@@ -280,8 +302,8 @@ function createGrid(options) {
    * @return {[type]}            [description]
    */
   grid.move = function (fromRow, fromColumn, toRow, toColumn) {
-    let fromEntity = getEntity(fromRow, fromColumn);
-    let toEntity = getEntity(toRow, toColumn);
+    let fromEntity = getEntityByPosition(fromRow, fromColumn);
+    let toEntity = getEntityByPosition(toRow, toColumn, true);
 
     if (fromEntity && toEntity) {
       let userObject = fromEntity.userObject;
@@ -322,15 +344,6 @@ class Entity {
     this.properties = {};
     this.userObject = null;
     this.options = options;
-  }
-
-  setUserObject(newUserObject) {
-    let oldUserObject = this.userObject;
-    this.userObject = newUserObject;
-
-    if (isFunction(this.options.userObjectChanged)) {
-      this.options.userObjectChanged(this.properties, newUserObject, oldUserObject);
-    }
   }
 }
 

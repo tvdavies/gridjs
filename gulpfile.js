@@ -38,15 +38,15 @@ gulp.task('lint', cb => {
 });
 
 gulp.task('build', ['clean', 'lint'], cb => {
-  pump([
-        gulp.src('src/**/*.js'),
-        babel({
-          presets: ['es2015'],
-          plugins: ['transform-es2015-modules-umd']
-        }),
-        concat('gridjs.js'),
-        sourcemaps.write('.'),
-        gulp.dest('dist')
+    pump([
+      gulp.src('src/**/*.js'),
+      babel({
+        presets: ['es2015'],
+        plugins: ['transform-es2015-modules-umd']
+      }),
+      concat('gridjs.js'),
+      sourcemaps.write('.'),
+      gulp.dest('dist')
     ],
     cb
   );
