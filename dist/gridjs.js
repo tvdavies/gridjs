@@ -212,6 +212,7 @@
     }
 
     function getEntityByPosition(row, col, create, callback) {
+
       var created = false;
 
       // Do we have this many rows and columns?
@@ -238,8 +239,8 @@
         }
       }
 
-      console.log('rowIdx = ' + (row - 1) + ', rows.length = ' + rows.length);
-      console.log('colIdx = ' + (col - 1) + ', rows[row - 1].length = ' + rows[row - 1].length);
+      // console.log('rowIdx = ' + (row - 1) + ', rows.length = ' + rows.length);
+      // console.log('colIdx = ' + (col - 1) + ', rows[row - 1].length = ' + rows[row - 1].length);
 
       if (rows.length >= row && rows[row - 1].length >= col) {
         if (isFunction(callback)) {
@@ -318,13 +319,29 @@
      * @param  {function} iteratee Iteratee function (userObject, entityProps, entityId)
      * @return {Entity[]}
      */
-    grid.find = function (iteratee) {
-      if (isFunction(iteratee)) {
-        return getObjectValues(entities).filter(function (entity) {
+    grid.find = function (iteratee, callback) {
+      if (isFunction(iteratee) && isFunction(callback)) {
+        var found = getObjectValues(entities).find(function (entity) {
           return iteratee(entity.userObject, entity.properties, entity.id);
         });
-      } else {
-        return [];
+        if (found) {
+          callback(found.userObject, found.rowNumber, found.colNumber, found.properties, found.id);
+        }
+      }
+    };
+
+    /**
+     * Find if entity exists at position
+     * @param  {[type]}   row      [description]
+     * @param  {[type]}   column   [description]
+     * @param  {Function} callback [description]
+     * @return {[type]}            [description]
+     */
+    grid.exists = function (row, column, callback) {
+      if (isFunction(callback)) {
+        getEntityByPosition(row, column, false, function (entity) {
+          return callback(entity !== null);
+        });
       }
     };
 
@@ -337,7 +354,9 @@
     grid.get = function (row, column, callback) {
       if (isFunction(callback)) {
         getEntityByPosition(row, column, false, function (entity) {
-          return callback(entity.userObject, entity.properties);
+          var userObj = entity ? entity.userObject : null;
+          var props = entity ? entity.properties : null;
+          callback(userObj, props);
         });
       }
     };
@@ -349,8 +368,8 @@
      * @param {[type]} userObject [description]
      */
     grid.set = function (row, column, userObject) {
-      console.log('setting entity');
-      console.log(row + ', ' + column);
+      // console.log('setting entity');
+      // console.log(row + ', ' + column);
       getEntityByPosition(row, column, true, function (entity, created) {
         if (userObject) {
           setUserObject(entity, userObject);
@@ -419,7 +438,7 @@
     this.userObject = null;
     this.options = options;
 
-    console.log('Entity at ' + this.rowNumber + ', ' + this.colNumber);
+    // console.log('Entity at ' + this.rowNumber + ', ' + this.colNumber);
   };
 
   var DuplicateFirstEntityException = function DuplicateFirstEntityException() {
